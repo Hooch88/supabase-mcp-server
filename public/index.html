@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI RPG Game Master</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            background-color: #121212;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #chat-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 18px;
+            max-width: 80%;
+            line-height: 1.5;
+        }
+
+        .user-message {
+            background-color: #373737;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .gm-message {
+            background-color: #004d40;
+            align-self: flex-start;
+        }
+
+        #input-container {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #333;
+            background-color: #1e1e1e;
+        }
+
+        #message-input {
+            flex: 1;
+            padding: 10px 15px;
+            border-radius: 20px;
+            border: 1px solid #444;
+            background-color: #252525;
+            color: #fff;
+            font-size: 16px;
+        }
+
+        #send-button {
+            margin-left: 10px;
+            padding: 10px 20px;
+            border: none;
+            background-color: #00796b;
+            color: #fff;
+            border-radius: 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #send-button:disabled {
+            background-color: #444;
+            cursor: not-allowed;
+        }
+
+        .loader {
+            text-align: center;
+            color: #888;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chat-container">
+    </div>
+    <div id="input-container">
+        <input type="text" id="message-input" placeholder="What do you do next?">
+        <button id="send-button">Send</button>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            addMessage(message, 'user');
+            messageInput.value = '';
+            toggleLoading(true);
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok.');
+                }
+
+                const data = await response.json();
+                addMessage(data.message, 'gm');
+
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage('Sorry, an error occurred. The GM might be taking a nap.', 'gm');
+            } finally {
+                toggleLoading(false);
+            }
+        }
+
+        function addMessage(text, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender === 'user' ? 'user-message' : 'gm-message'}`;
+            messageDiv.textContent = text;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight; // Auto-scroll
+        }
+
+        function toggleLoading(isLoading) {
+            sendButton.disabled = isLoading;
+            messageInput.disabled = isLoading;
+
+            let loader = document.querySelector('.loader');
+            if (isLoading && !loader) {
+                loader = document.createElement('div');
+                loader.className = 'loader';
+                loader.textContent = 'GM is thinking...';
+                chatContainer.appendChild(loader);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            } else if (!isLoading && loader) {
+                loader.remove();
+            }
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Add a starting message
+        addMessage("The adventure begins! Your fate is in your hands. What do you wish to do?", "gm");
+    </script>
+</body>
+
+</html>
