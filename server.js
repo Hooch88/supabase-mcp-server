@@ -11,7 +11,7 @@ app.use(express.static('public')); // Serve static files from 'public' folder
 const PORT = process.env.PORT || 10000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // Your new API Key
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // --- Validation for environment variables ---
 if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -27,6 +27,8 @@ if (!GEMINI_API_KEY) {
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
     model: "gemini-1.5-pro-latest",
+    // --- Give the AI its core instructions ---
+    systemInstruction: "You are a text-based RPG Game Master. Your primary role is to create an interactive story. You have direct access to a game database via your tools. You MUST use these tools to look up information and permanently modify the game state (e.g., creating NPCs, updating player state, etc.) as the story requires. Do not tell the user you cannot perform an action; use your tools to perform it.",
     // --- Define the Supabase tools for Gemini ---
     tools: {
         functionDeclarations: [
@@ -59,7 +61,8 @@ const model = genAI.getGenerativeModel({
             },
             {
                 name: "execute_sql",
-                description: "Execute a raw, arbitrary SQL query against the database. Use for complex queries, joins, or data manipulation.",
+                // --- A more explicit description for read AND write access ---
+                description: "Execute any valid SQL query to read, insert, update, or delete data. Use this tool to modify the game state, such as creating new characters, updating player location, or changing world events.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -72,13 +75,12 @@ const model = genAI.getGenerativeModel({
     }
 });
 
+
 // --- In-memory chat history (for simplicity) ---
-// Note: This will reset if the server restarts. A more advanced version would save this to the database.
 const conversationHistory = [];
 
-// --- Supabase Helper: The same one you had before ---
+// --- Supabase Helper ---
 async function runSQL(query) {
-    // Using native fetch, as you are on Node 18+
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
         method: "POST",
         headers: {
@@ -118,12 +120,11 @@ const tools = {
     }
 };
 
-// --- NEW: The main chat endpoint for your web app ---
+// --- The main chat endpoint for your web app ---
 app.post("/chat", async (req, res) => {
     try {
         const { message } = req.body;
 
-        // Add user message to history
         conversationHistory.push({ role: "user", parts: [{ text: message }] });
 
         const chat = model.startChat({ history: conversationHistory });
@@ -133,24 +134,22 @@ app.post("/chat", async (req, res) => {
 
         if (functionCalls && functionCalls.length > 0) {
             // --- Handle Tool/Function Calling ---
-            const call = functionCalls[0]; // Handle one call at a time for simplicity
+            const call = functionCalls[0];
             console.log(`🤖 Request to call tool: ${call.name}`);
 
-            // Call the corresponding tool function
             const toolResult = await tools[call.name](call.args);
 
-            // Send the result back to Gemini
             const result2 = await chat.sendMessage([
                 { functionResponse: { name: call.name, response: { content: toolResult } } }
             ]);
 
-            // --- IMPORTANT: Add the history correctly ---
+            // --- CORRECTED HISTORY LOGIC ---
             // 1. Add the model's request to use a tool
             conversationHistory.push(response.candidates[0].content);
 
             // 2. Add the actual result of the tool execution
             conversationHistory.push({
-                role: "function", // This is the correct role for a tool's output
+                role: "function",
                 parts: [{
                     functionResponse: {
                         name: call.name,
@@ -181,7 +180,7 @@ app.post("/chat", async (req, res) => {
 });
 
 
-// --- Health Check and Root endpoints (unchanged) ---
+// --- Health Check and Root endpoints ---
 app.get("/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
