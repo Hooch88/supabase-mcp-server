@@ -144,14 +144,25 @@ app.post("/chat", async (req, res) => {
                 { functionResponse: { name: call.name, response: { content: toolResult } } }
             ]);
 
-            // Add the model's tool request and our response to history
-            conversationHistory.push(response);
+            // --- IMPORTANT: Add the history correctly ---
+            // 1. Add the model's request to use a tool
+            conversationHistory.push(response.candidates[0].content);
+
+            // 2. Add the actual result of the tool execution
             conversationHistory.push({
-                role: "model", // This should actually be 'tool' or 'function' but adapting for simplicity
-                parts: [{ functionResponse: { name: call.name, response: { content: toolResult } } }]
+                role: "function", // This is the correct role for a tool's output
+                parts: [{
+                    functionResponse: {
+                        name: call.name,
+                        response: {
+                            name: call.name,
+                            content: toolResult,
+                        },
+                    },
+                }],
             });
 
-            // Get the final text response from the model
+            // Get the final text response from the model now that it has the tool result
             const finalResponse = result2.response.text();
             conversationHistory.push({ role: "model", parts: [{ text: finalResponse }] });
             res.json({ message: finalResponse });
