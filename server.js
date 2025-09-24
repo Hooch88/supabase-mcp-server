@@ -37,24 +37,26 @@ app.get("/health", (req, res) => {
 // Root metadata
 app.get("/", (req, res) => res.json(serverInfo));
 
-// Helper: run SQL via Supabase REST API
+// Helper: run SQL via Supabase RPC exec_sql
 async function runSQL(query) {
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
         method: "POST",
         headers: {
             "apikey": SUPABASE_SERVICE_ROLE_KEY,
             "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         },
-        body: JSON.stringify({ sql: query })
+        body: JSON.stringify({ sql: query }),
     });
 
     if (!resp.ok) {
         const text = await resp.text();
         throw new Error(`Supabase SQL error: ${resp.status} ${text}`);
     }
+
     return resp.json();
 }
+
 
 
 // --- MCP HANDLER ---
