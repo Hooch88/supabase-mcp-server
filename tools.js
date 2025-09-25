@@ -17,19 +17,14 @@ async function runSQL(query) {
 
 // --- Tool Implementations ---
 const tools = {
-    async get_npc_data({ npc_name }) {
-        let sql = `SELECT npc_id, name, description, location, disposition, is_hostile FROM npcs`;
-        if (npc_name) {
-            const escape = (val) => `'${val.replace(/'/g, "''")}'`;
-            sql += ` WHERE name = ${escape(npc_name)}`;
+    async get_table_data({ table, query }) {
+        let sql = `SELECT * FROM ${table}`;
+        if (query) {
+            const sanitizedQuery = query.replace(/;/g, '');
+            sql += ` WHERE ${sanitizedQuery}`;
         }
-        sql += ';';
-        const data = await runSQL(sql);
-        return JSON.stringify(data, null, 2);
-    },
-    async get_npc_persona({ npc_id }) {
-        const escape = (val) => `'${val.replace(/'/g, "''")}'`;
-        const sql = `SELECT * FROM npc_personas WHERE npc_id = ${escape(npc_id)};`;
+        // The line below was the bug and has been removed.
+        // sql += ';'; 
         const data = await runSQL(sql);
         return JSON.stringify(data, null, 2);
     },
@@ -46,13 +41,10 @@ const tools = {
         }
         return `Successfully created NPC: ${name}`;
     },
-    // --- NEW FUNCTION ---
     async create_npc_persona({ npc_id, persona_description, mannerisms, desires, fears }) {
-        // First, update the main npcs table to mark this character as a primary NPC
-        const updateQuery = `UPDATE npcs SET primary_npc = true WHERE npc_id = '${npc_id}';`;
+        const updateQuery = `UPDATE npcs SET primary_npc = true WHERE npc_id = '${npc_id}'`;
         await runSQL(updateQuery);
 
-        // Next, insert the detailed persona into the npc_personas table
         const personaData = { npc_id, persona_description, mannerisms, desires, fears };
         const resp = await fetch(`${SUPABASE_URL}/rest/v1/npc_personas`, {
             method: 'POST',
@@ -72,7 +64,7 @@ const tools = {
         if (new_disposition !== undefined) updates.push(`disposition = ${new_disposition}`);
         if (updates.length === 0) return "No updates provided.";
 
-        const query = `UPDATE npcs SET ${updates.join(', ')} WHERE npc_id = ${escape(npc_id)};`;
+        const query = `UPDATE npcs SET ${updates.join(', ')} WHERE npc_id = ${escape(npc_id)}`;
         await runSQL(query);
         return `NPC ${npc_id}'s data has been successfully updated.`;
     }
