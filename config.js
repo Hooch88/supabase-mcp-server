@@ -93,20 +93,20 @@ You have specialized tools to read and write to the database. You MUST use these
                     required: ["npc_id", "name", "description", "location"]
                 }
             },
-            // --- NEW TOOL DEFINITION ---
+            // Inside config.js, in the 'create_npc_persona' tool definition
             {
                 name: "create_npc_persona",
                 description: "Creates a detailed persona for a new primary NPC, promoting them.",
                 parameters: {
                     type: "object",
                     properties: {
-                        npc_id: { type: "string" },
+                        npc_name: { type: "string", description: "The name of the NPC to promote, e.g., 'Seraphina Belle'." },
                         persona_description: { type: "string" },
                         mannerisms: { type: "array", items: { type: "string" } },
                         desires: { type: "array", items: { type: "string" } },
                         fears: { type: "array", items: { type: "string" } }
                     },
-                    required: ["npc_id", "persona_description", "mannerisms", "desires", "fears"]
+                    required: ["npc_name", "persona_description", "mannerisms", "desires", "fears"]
                 }
             },
             {
