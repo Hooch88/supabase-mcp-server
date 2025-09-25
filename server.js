@@ -14,12 +14,8 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // --- Validation for environment variables ---
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-    process.exit(1);
-}
-if (!GEMINI_API_KEY) {
-    console.error("❌ Missing GEMINI_API_KEY");
+if (!SUPABASE_URL || !SUPABASE_KEY || !GEMINI_API_KEY) {
+    console.error("❌ Missing one or more environment variables");
     process.exit(1);
 }
 
@@ -30,14 +26,7 @@ const model = genAI.getGenerativeModel({
     systemInstruction: `
 ---
 # ROLE & GOAL
-You are the Game Master for the narrative RPG ToRiches.
-Your job: deliver cinematic, immersive, NC-17-capable storytelling and maintain perfect state continuity.
-
-The complete rules, lore, and canon for the game are stored in the 'game_lore' database table.
-You MUST use your tools to query this table for the relevant document before proceeding with a scene.
-For example, to understand the narrative style, run the SQL query:
-"SELECT content FROM game_lore WHERE title = 'to_riches_game_engine_v3.md'"
-
+You are the Game Master for the narrative RPG ToRiches. Your job: deliver cinematic, immersive, NC-17-capable storytelling and maintain perfect state continuity. The complete rules, lore, and canon for the game are stored in the 'game_lore' database table. You MUST use your tools to query this table for the relevant document before proceeding with a scene. For example, to understand the narrative style, run the SQL query: "SELECT content FROM game_lore WHERE title = 'to_riches_game_engine_v3.md'"
 ---
 # CANON PRIORITY & KNOWLEDGE BASE
 Your knowledge comes from the documents in the 'game_lore' table. The priority is:
@@ -46,9 +35,7 @@ Your knowledge comes from the documents in the 'game_lore' table. The priority i
 3. to_riches_world_instructions_v3.md
 4. to_riches_events_system_v3.md
 5. to_riches_v3_readme.md (for context + sanity checks)
-
 You must also use your tools to query the npcs, player, and romance tables to get the current game state.
-
 ---
 # CRITICAL NARRATIVE RULES
 * NC-17 is default — never fade-to-black unless dramatically motivated.
@@ -56,7 +43,6 @@ You must also use your tools to query the npcs, player, and romance tables to ge
 * Fire events automatically on meaningful beats; use your tools to write them to the database.
 * Enforce voiceguide cooldowns, which you can find in 'to_riches_voice_guide_v3.md'.
 * Maintain cross-file hygiene: IDs, scene_refs, etc., must resolve.
-
 ---
 # NPC PERSONA & VOICE
 * Primary NPCs (Tara, Sasha, Brielle, Elena) have detailed persona data. All others are secondary.
@@ -64,11 +50,9 @@ You must also use your tools to query the npcs, player, and romance tables to ge
 * CRITICAL FOR GROUP SCENES: You MUST cross-reference the 'pair_edges' for each character present. Their interactions MUST be colored by these defined relationships.
 * Imitate Dialogue Examples: The examples are your guide for a character's speech patterns.
 * Voice Guide for Rules: The 'to_riches_voice_guide_v3.md' file contains global rules for all NPCs.
-
 ---
 # STATE MANAGEMENT
 You have specialized tools like 'create_npc' and 'get_table_data' to read and write to the database. You MUST use these tools to keep the game state updated. Do not try to write raw SQL.
-
 ---
 # GOLDEN RULES
 1. Never lose progress — use your tools to save state changes.
@@ -117,10 +101,8 @@ You have specialized tools like 'create_npc' and 'get_table_data' to read and wr
     }
 });
 
-// --- In-memory chat history ---
 const conversationHistory = [];
 
-// --- Supabase Helper ---
 async function runSQL(query) {
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
         method: "POST", headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Accept": "application/json" },
@@ -136,9 +118,8 @@ async function runSQL(query) {
 
 // --- Tool implementation functions ---
 const tools = {
-    // A more powerful data getter
     async get_table_data({ table, query }) {
-        let sql = `SELECT * FROM ${table}`; // Corrected: Removed quotes around table for safety with Supabase RPC
+        let sql = `SELECT * FROM ${table}`;
         if (query) {
             sql += ` WHERE ${query}`;
         }
@@ -146,15 +127,12 @@ const tools = {
         const data = await runSQL(sql);
         return JSON.stringify(data, null, 2);
     },
-    // Safe tool for creating NPCs
     async create_npc({ name, description, disposition, location, is_hostile }) {
         const escape = (val) => (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val);
-        // --- THIS LINE IS THE FIX ---
         const query = `INSERT INTO npcs (name, description, disposition, location, is_hostile) VALUES (${escape(name)}, ${escape(description)}, ${disposition}, ${escape(location)}, ${is_hostile});`;
         await runSQL(query);
         return `Successfully created NPC: ${name}`;
     },
-    // Safe tool for updating NPCs
     async update_npc_data({ npc_name, new_location, new_description, new_disposition }) {
         const updates = [];
         const escape = (val) => (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val);
@@ -162,17 +140,14 @@ const tools = {
         if (new_location) updates.push(`location = ${escape(new_location)}`);
         if (new_description) updates.push(`description = ${escape(new_description)}`);
         if (new_disposition !== undefined) updates.push(`disposition = ${new_disposition}`);
-
         if (updates.length === 0) return "No updates provided.";
 
-        // --- THIS LINE IS THE FIX ---
         const query = `UPDATE npcs SET ${updates.join(', ')} WHERE name = ${escape(npc_name)};`;
         await runSQL(query);
         return `${npc_name}'s data has been updated.`;
     }
 };
 
-// --- The main chat endpoint for your web app (unchanged logic) ---
 app.post("/chat", async (req, res) => {
     try {
         const { message } = req.body;
@@ -187,15 +162,12 @@ app.post("/chat", async (req, res) => {
             const call = functionCalls[0];
             console.log(`🤖 Request to call tool: ${call.name} with args: ${JSON.stringify(call.args)}`);
             const toolResult = await tools[call.name](call.args);
-
             const result2 = await chat.sendMessage([{ functionResponse: { name: call.name, response: { content: toolResult } } }]);
-
             conversationHistory.push(response.candidates[0].content);
             conversationHistory.push({
                 role: "function",
                 parts: [{ functionResponse: { name: call.name, response: { name: call.name, content: toolResult } } }],
             });
-
             const finalResponse = result2.response.text();
             conversationHistory.push({ role: "model", parts: [{ text: finalResponse }] });
             res.json({ message: finalResponse });
