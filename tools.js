@@ -39,9 +39,17 @@ const tools = {
         }
         return `Successfully created NPC: ${name}`;
     },
-    async create_npc_persona({ npc_id, persona_description, mannerisms, desires, fears }) {
-        // --- REWRITTEN TO USE DIRECT API CALLS ---
-        // 1. Promote the NPC to primary using a PATCH request
+    // --- THIS FUNCTION IS NOW SMARTER ---
+    async create_npc_persona({ npc_name, persona_description, mannerisms, desires, fears }) {
+        // Step 1: Find the correct npc_id using the character's name.
+        const escape = (val) => `'${val.replace(/'/g, "''")}'`;
+        const npcResult = await runSQL(`SELECT npc_id FROM npcs WHERE name = ${escape(npc_name)} LIMIT 1`);
+        if (!npcResult || npcResult.length === 0) {
+            return `Error: Could not find an NPC named '${npc_name}'.`;
+        }
+        const npc_id = npcResult[0].npc_id;
+
+        // Step 2: Promote the NPC to primary using a PATCH request
         const updateResp = await fetch(`${SUPABASE_URL}/rest/v1/npcs?npc_id=eq.${npc_id}`, {
             method: 'PATCH',
             headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
@@ -52,7 +60,7 @@ const tools = {
             throw new Error(`Supabase API error (updating NPC): ${updateResp.status} ${err}`);
         }
 
-        // 2. Insert the detailed persona using a POST request
+        // Step 3: Insert the detailed persona using a POST request
         const personaData = { npc_id, persona_description, mannerisms, desires, fears };
         const insertResp = await fetch(`${SUPABASE_URL}/rest/v1/npc_personas`, {
             method: 'POST',
@@ -63,10 +71,9 @@ const tools = {
             const err = await insertResp.text();
             throw new Error(`Supabase API error (inserting persona): ${insertResp.status} ${err}`);
         }
-        return `Successfully created persona for ${npc_id} and promoted them to a primary NPC.`;
+        return `Successfully created persona for ${npc_name} (${npc_id}) and promoted them to a primary NPC.`;
     },
     async update_npc_data({ npc_id, new_location, new_disposition }) {
-        // --- REWRITTEN TO USE A DIRECT API CALL ---
         const updates = {};
         if (new_location) updates.location = new_location;
         if (new_disposition !== undefined) updates.disposition = new_disposition;
