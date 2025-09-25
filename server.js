@@ -5,8 +5,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const app = express();
 app.use(bodyParser.json());
-app.use(cors()); // Enable CORS for all routes
-app.use(express.static('public')); // Serve static files from 'public' folder
+app.use(cors());
+app.use(express.static('public'));
 
 const PORT = process.env.PORT || 10000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -27,71 +27,105 @@ if (!GEMINI_API_KEY) {
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
     model: "gemini-1.5-pro-latest",
-    // --- Give the AI its core instructions ---
-    systemInstruction: "You are a text-based RPG Game Master. Your primary role is to create an interactive story. You have direct access to a game database via your tools. You MUST use these tools to look up information and permanently modify the game state (e.g., creating NPCs, updating player state, etc.) as the story requires. Do not tell the user you cannot perform an action; use your tools to perform it.",
-    // --- Define the Supabase tools for Gemini ---
+    systemInstruction: `
+---
+# ROLE & GOAL
+You are the Game Master for the narrative RPG ToRiches.
+Your job: deliver cinematic, immersive, NC-17-capable storytelling and maintain perfect state continuity.
+
+The complete rules, lore, and canon for the game are stored in the 'game_lore' database table.
+You MUST use your tools to query this table for the relevant document before proceeding with a scene.
+For example, to understand the narrative style, run the SQL query:
+"SELECT content FROM game_lore WHERE title = 'to_riches_game_engine_v3.md'"
+
+---
+# CANON PRIORITY & KNOWLEDGE BASE
+Your knowledge comes from the documents in the 'game_lore' table. The priority is:
+1. to_riches_game_engine_v3.md
+2. to_riches_voice_guide_v3.md
+3. to_riches_world_instructions_v3.md
+4. to_riches_events_system_v3.md
+5. to_riches_v3_readme.md (for context + sanity checks)
+
+You must also use your tools to query the npcs, player, and romance tables to get the current game state.
+
+---
+# CRITICAL NARRATIVE RULES
+* NC-17 is default — never fade-to-black unless dramatically motivated.
+* Use realistic, cinematic language.
+* Fire events automatically on meaningful beats; use your tools to write them to the database.
+* Enforce voiceguide cooldowns, which you can find in 'to_riches_voice_guide_v3.md'.
+* Maintain cross-file hygiene: IDs, scene_refs, etc., must resolve.
+
+---
+# NPC PERSONA & VOICE
+* Primary NPCs (Tara, Sasha, Brielle, Elena) have detailed persona data. All others are secondary.
+* Persona is Law: Adhere to the description, mannerisms, desires, fears, and surprise_hooks.
+* CRITICAL FOR GROUP SCENES: You MUST cross-reference the 'pair_edges' for each character present. Their interactions MUST be colored by these defined relationships.
+* Imitate Dialogue Examples: The examples are your guide for a character's speech patterns.
+* Voice Guide for Rules: The 'to_riches_voice_guide_v3.md' file contains global rules for all NPCs.
+
+---
+# STATE MANAGEMENT
+You have specialized tools like 'create_npc' and 'get_table_data' to read and write to the database. You MUST use these tools to keep the game state updated. Do not try to write raw SQL.
+
+---
+# GOLDEN RULES
+1. Never lose progress — use your tools to save state changes.
+2. Use your tools to load all relevant character and world state at the start of a scene.
+3. Maintain canon: The player's lottery win was $1 Trillion.
+4. NPC voices must be distinct and in character.
+5. You must update the game state consistently so future events can escalate naturally based on prior actions.
+`,
     tools: {
         functionDeclarations: [
             {
-                name: "list_tables",
-                description: "List all public tables in the database.",
-            },
-            {
-                name: "list_columns",
-                description: "List all columns and their data types for a specific table.",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        table: { type: "string", description: "The name of the table." }
-                    },
-                    required: ["table"]
-                }
-            },
-            {
                 name: "get_table_data",
-                description: "Fetch a specified number of rows from a table.",
+                description: "Fetch rows from a table to get current game state information. Use this for reading data.",
+                parameters: { type: "object", properties: { table: { type: "string" }, query: { type: "string", description: "A SQL WHERE clause to filter the results, e.g., \"name = 'Tara'\"" } }, required: ["table"] }
+            },
+            {
+                name: "create_npc",
+                description: "Creates a new non-player character in the database.",
                 parameters: {
                     type: "object",
                     properties: {
-                        table: { type: "string", description: "The name of the table to fetch data from." },
-                        limit: { type: "integer", description: "The maximum number of rows to return. Defaults to 10." }
+                        name: { type: "string", description: "The character's name." },
+                        description: { type: "string", description: "A brief description of the character." },
+                        disposition: { type: "integer", description: "A number from -100 (hostile) to 100 (friendly)." },
+                        location: { type: "string", description: "The current location of the character." },
+                        is_hostile: { type: "boolean", description: "Whether the character is immediately hostile." }
                     },
-                    required: ["table"]
+                    required: ["name", "description", "disposition", "location", "is_hostile"]
                 }
             },
             {
-                name: "execute_sql",
-                // --- A more explicit description for read AND write access ---
-                description: "Execute any valid SQL query to read, insert, update, or delete data. Use this tool to modify the game state, such as creating new characters, updating player location, or changing world events.",
+                name: "update_npc_data",
+                description: "Updates data for an existing NPC.",
                 parameters: {
                     type: "object",
                     properties: {
-                        query: { type: "string", description: "The SQL query to execute." }
+                        npc_name: { type: "string", description: "The name of the NPC to update." },
+                        new_location: { type: "string" },
+                        new_description: { type: "string" },
+                        new_disposition: { type: "integer" }
                     },
-                    required: ["query"]
+                    required: ["npc_name"]
                 }
             }
         ]
     }
 });
 
-
-// --- In-memory chat history (for simplicity) ---
+// --- In-memory chat history ---
 const conversationHistory = [];
 
 // --- Supabase Helper ---
 async function runSQL(query) {
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
-        method: "POST",
-        headers: {
-            "apikey": SUPABASE_KEY,
-            "Authorization": `Bearer ${SUPABASE_KEY}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        },
+        method: "POST", headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({ sql: query }),
     });
-
     if (!resp.ok) {
         const err = await resp.text();
         console.error("Supabase SQL error:", err);
@@ -102,29 +136,44 @@ async function runSQL(query) {
 
 // --- Tool implementation functions ---
 const tools = {
-    async list_tables() {
-        const data = await runSQL("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name");
+    // A more powerful data getter
+    async get_table_data({ table, query }) {
+        let sql = `SELECT * FROM "${table}"`;
+        if (query) {
+            sql += ` WHERE ${query}`;
+        }
+        sql += ';';
+        const data = await runSQL(sql);
         return JSON.stringify(data, null, 2);
     },
-    async list_columns({ table }) {
-        const data = await runSQL(`SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='${table}' ORDER BY ordinal_position`);
-        return JSON.stringify(data, null, 2);
+    // Safe tool for creating NPCs
+    async create_npc({ name, description, disposition, location, is_hostile }) {
+        const escape = (val) => (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val);
+        const query = `INSERT INTO npcs (name, description, disposition, location, is_hostile) VALUES (${escape(name)}, ${escape(description)}, ${disposition}, ${escape(location)}, ${is_hostile});`;
+        await runSQL(query);
+        return `Successfully created NPC: ${name}`;
     },
-    async get_table_data({ table, limit = 10 }) {
-        const data = await runSQL(`SELECT * FROM "${table}" LIMIT ${limit}`);
-        return JSON.stringify(data, null, 2);
-    },
-    async execute_sql({ query }) {
-        const data = await runSQL(query);
-        return JSON.stringify(data, null, 2);
+    // Safe tool for updating NPCs
+    async update_npc_data({ npc_name, new_location, new_description, new_disposition }) {
+        const updates = [];
+        const escape = (val) => (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val);
+
+        if (new_location) updates.push(`location = ${escape(new_location)}`);
+        if (new_description) updates.push(`description = ${escape(new_description)}`);
+        if (new_disposition !== undefined) updates.push(`disposition = ${new_disposition}`);
+
+        if (updates.length === 0) return "No updates provided.";
+
+        const query = `UPDATE npcs SET ${updates.join(', ')} WHERE name = ${escape(npc_name)};`;
+        await runSQL(query);
+        return `${npc_name}'s data has been updated.`;
     }
 };
 
-// --- The main chat endpoint for your web app ---
+// --- The main chat endpoint for your web app (unchanged logic) ---
 app.post("/chat", async (req, res) => {
     try {
         const { message } = req.body;
-
         conversationHistory.push({ role: "user", parts: [{ text: message }] });
 
         const chat = model.startChat({ history: conversationHistory });
@@ -133,54 +182,32 @@ app.post("/chat", async (req, res) => {
         const functionCalls = response.functionCalls();
 
         if (functionCalls && functionCalls.length > 0) {
-            // --- Handle Tool/Function Calling ---
             const call = functionCalls[0];
-            console.log(`🤖 Request to call tool: ${call.name}`);
-
+            console.log(`🤖 Request to call tool: ${call.name} with args: ${JSON.stringify(call.args)}`);
             const toolResult = await tools[call.name](call.args);
 
-            const result2 = await chat.sendMessage([
-                { functionResponse: { name: call.name, response: { content: toolResult } } }
-            ]);
+            const result2 = await chat.sendMessage([{ functionResponse: { name: call.name, response: { content: toolResult } } }]);
 
-            // --- CORRECTED HISTORY LOGIC ---
-            // 1. Add the model's request to use a tool
             conversationHistory.push(response.candidates[0].content);
-
-            // 2. Add the actual result of the tool execution
             conversationHistory.push({
                 role: "function",
-                parts: [{
-                    functionResponse: {
-                        name: call.name,
-                        response: {
-                            name: call.name,
-                            content: toolResult,
-                        },
-                    },
-                }],
+                parts: [{ functionResponse: { name: call.name, response: { name: call.name, content: toolResult } } }],
             });
 
-            // Get the final text response from the model now that it has the tool result
             const finalResponse = result2.response.text();
             conversationHistory.push({ role: "model", parts: [{ text: finalResponse }] });
             res.json({ message: finalResponse });
-
         } else {
-            // --- Handle a regular text response ---
             const text = response.text();
             conversationHistory.push({ role: "model", parts: [{ text }] });
             res.json({ message: text });
         }
-
     } catch (error) {
         console.error("Chat endpoint error:", error);
         res.status(500).json({ error: "An error occurred." });
     }
 });
 
-
-// --- Health Check and Root endpoints ---
 app.get("/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
