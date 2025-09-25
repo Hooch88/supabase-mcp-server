@@ -93,6 +93,22 @@ You have specialized tools to read and write to the database. You MUST use these
                     required: ["npc_id", "name", "description", "location"]
                 }
             },
+            // --- NEW TOOL DEFINITION ---
+            {
+                name: "create_npc_persona",
+                description: "Creates a detailed persona for a new primary NPC, promoting them.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        npc_id: { type: "string" },
+                        persona_description: { type: "string" },
+                        mannerisms: { type: "array", items: { type: "string" } },
+                        desires: { type: "array", items: { type: "string" } },
+                        fears: { type: "array", items: { type: "string" } }
+                    },
+                    required: ["npc_id", "persona_description", "mannerisms", "desires", "fears"]
+                }
+            },
             {
                 name: "update_npc_data",
                 description: "Edits basic data (like location or disposition) for an existing NPC in the 'npcs' table.",

@@ -17,7 +17,6 @@ async function runSQL(query) {
 
 // --- Tool Implementations ---
 const tools = {
-    // Get basic data for one or all NPCs
     async get_npc_data({ npc_name }) {
         let sql = `SELECT npc_id, name, description, location, disposition, is_hostile FROM npcs`;
         if (npc_name) {
@@ -28,14 +27,12 @@ const tools = {
         const data = await runSQL(sql);
         return JSON.stringify(data, null, 2);
     },
-    // Get detailed persona for a single primary NPC
     async get_npc_persona({ npc_id }) {
         const escape = (val) => `'${val.replace(/'/g, "''")}'`;
         const sql = `SELECT * FROM npc_personas WHERE npc_id = ${escape(npc_id)};`;
         const data = await runSQL(sql);
         return JSON.stringify(data, null, 2);
     },
-    // Create a new (usually secondary) NPC
     async create_npc({ npc_id, name, description, location }) {
         const npcData = { npc_id, name, description, location, primary_npc: false, status: 'active' };
         const resp = await fetch(`${SUPABASE_URL}/rest/v1/npcs`, {
@@ -49,7 +46,25 @@ const tools = {
         }
         return `Successfully created NPC: ${name}`;
     },
-    // Update basic data for any NPC
+    // --- NEW FUNCTION ---
+    async create_npc_persona({ npc_id, persona_description, mannerisms, desires, fears }) {
+        // First, update the main npcs table to mark this character as a primary NPC
+        const updateQuery = `UPDATE npcs SET primary_npc = true WHERE npc_id = '${npc_id}';`;
+        await runSQL(updateQuery);
+
+        // Next, insert the detailed persona into the npc_personas table
+        const personaData = { npc_id, persona_description, mannerisms, desires, fears };
+        const resp = await fetch(`${SUPABASE_URL}/rest/v1/npc_personas`, {
+            method: 'POST',
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify(personaData)
+        });
+        if (!resp.ok) {
+            const err = await resp.text();
+            throw new Error(`Supabase API error: ${resp.status} ${err}`);
+        }
+        return `Successfully created persona for ${npc_id} and promoted them to a primary NPC.`;
+    },
     async update_npc_data({ npc_id, new_location, new_disposition }) {
         const updates = [];
         const escape = (val) => (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val);
