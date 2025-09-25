@@ -16,6 +16,16 @@
             height: 100vh;
         }
 
+        /* --- NEW: Centered Layout --- */
+        #app-container {
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
         #chat-container {
             flex: 1;
             padding: 20px;
@@ -82,11 +92,13 @@
 </head>
 
 <body>
-    <div id="chat-container">
-    </div>
-    <div id="input-container">
-        <input type="text" id="message-input" placeholder="What do you do next?">
-        <button id="send-button">Send</button>
+    <div id="app-container">
+        <div id="chat-container">
+        </div>
+        <div id="input-container">
+            <input type="text" id="message-input" placeholder="What do you do next?">
+            <button id="send-button">Send</button>
+        </div>
     </div>
 
     <script>
@@ -121,15 +133,17 @@
                 addMessage('Sorry, an error occurred. The GM might be taking a nap.', 'gm');
             } finally {
                 toggleLoading(false);
+                // --- NEW: Refocus the input field ---
+                messageInput.focus();
             }
         }
 
         function addMessage(text, sender) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${sender === 'user' ? 'user-message' : 'gm-message'}`;
-            messageDiv.textContent = text;
+            messageDiv.innerHTML = text.replace(/\n/g, '<br>'); // Support newlines in AI response
             chatContainer.appendChild(messageDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight; // Auto-scroll
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         function toggleLoading(isLoading) {
@@ -150,13 +164,14 @@
 
         sendButton.addEventListener('click', sendMessage);
         messageInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') {
+            if (event.key === 'Enter' && !event.shiftKey) { // Allow Shift+Enter for newlines
+                event.preventDefault(); // Prevent default Enter behavior (newline)
                 sendMessage();
             }
         });
 
-        // Add a starting message
         addMessage("The adventure begins! Your fate is in your hands. What do you wish to do?", "gm");
+        messageInput.focus(); // Focus on page load
     </script>
 </body>
 
