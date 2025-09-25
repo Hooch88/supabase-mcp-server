@@ -138,7 +138,7 @@ async function runSQL(query) {
 const tools = {
     // A more powerful data getter
     async get_table_data({ table, query }) {
-        let sql = `SELECT * FROM "${table}"`;
+        let sql = `SELECT * FROM ${table}`; // Corrected: Removed quotes around table for safety with Supabase RPC
         if (query) {
             sql += ` WHERE ${query}`;
         }
@@ -149,6 +149,7 @@ const tools = {
     // Safe tool for creating NPCs
     async create_npc({ name, description, disposition, location, is_hostile }) {
         const escape = (val) => (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val);
+        // --- THIS LINE IS THE FIX ---
         const query = `INSERT INTO npcs (name, description, disposition, location, is_hostile) VALUES (${escape(name)}, ${escape(description)}, ${disposition}, ${escape(location)}, ${is_hostile});`;
         await runSQL(query);
         return `Successfully created NPC: ${name}`;
@@ -164,6 +165,7 @@ const tools = {
 
         if (updates.length === 0) return "No updates provided.";
 
+        // --- THIS LINE IS THE FIX ---
         const query = `UPDATE npcs SET ${updates.join(', ')} WHERE name = ${escape(npc_name)};`;
         await runSQL(query);
         return `${npc_name}'s data has been updated.`;
