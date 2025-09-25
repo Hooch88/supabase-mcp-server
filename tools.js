@@ -17,11 +17,12 @@ async function runSQL(query) {
 
 // --- Tool Implementations ---
 const tools = {
-    async get_table_data({ table, query }) {
-        let sql = `SELECT * FROM ${table}`;
-        if (query) {
-            const sanitizedQuery = query.replace(/;/g, '');
-            sql += ` WHERE ${sanitizedQuery}`;
+    // --- THIS FUNCTION HAS BEEN RENAMED ---
+    async get_npc_data({ npc_name }) {
+        let sql = `SELECT npc_id, name, description, location, disposition, is_hostile FROM npcs`;
+        if (npc_name) {
+            const escape = (val) => `'${val.replace(/'/g, "''")}'`;
+            sql += ` WHERE name = ${escape(npc_name)}`;
         }
         const data = await runSQL(sql);
         return JSON.stringify(data, null, 2);
@@ -55,7 +56,6 @@ const tools = {
         }
         return `Successfully created persona for ${npc_id} and promoted them to a primary NPC.`;
     },
-    // --- THIS IS THE MISSING FUNCTION ---
     async update_npc_data({ npc_id, new_location, new_disposition }) {
         const updates = [];
         const escape = (val) => (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val);
