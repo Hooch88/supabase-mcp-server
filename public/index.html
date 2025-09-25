@@ -11,21 +11,19 @@
             margin: 0;
             background-color: #121212;
             color: #e0e0e0;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
         }
 
-        /* --- NEW: Centered Layout --- */
         #app-container {
             max-width: 800px;
             margin: 0 auto;
             width: 100%;
             display: flex;
             flex-direction: column;
-            height: 100%;
+            height: 100vh;
+            visibility: hidden;
         }
 
+        /* Hide by default */
         #chat-container {
             flex: 1;
             padding: 20px;
@@ -81,20 +79,68 @@
 
         #send-button:disabled {
             background-color: #444;
-            cursor: not-allowed;
         }
 
         .loader {
             text-align: center;
             color: #888;
         }
+
+        /* --- NEW: Password Overlay Styles --- */
+        #password-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        #password-box {
+            background-color: #1e1e1e;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+
+        #password-input {
+            padding: 10px;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+
+        #password-submit {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin-top: 15px;
+        }
+
+        #password-error {
+            color: #ff5555;
+            margin-top: 10px;
+            display: none;
+        }
     </style>
 </head>
 
 <body>
-    <div id="app-container">
-        <div id="chat-container">
+    <div id="password-overlay">
+        <div id="password-box">
+            <h3>Enter Access Code</h3>
+            <input type="password" id="password-input">
+            <br>
+            <button id="password-submit">Enter</button>
+            <p id="password-error">Incorrect password.</p>
         </div>
+    </div>
+
+    <div id="app-container">
+        <div id="chat-container"></div>
         <div id="input-container">
             <input type="text" id="message-input" placeholder="What do you do next?">
             <button id="send-button">Send</button>
@@ -102,9 +148,43 @@
     </div>
 
     <script>
+        const appContainer = document.getElementById('app-container');
         const chatContainer = document.getElementById('chat-container');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
+        const passwordOverlay = document.getElementById('password-overlay');
+        const passwordInput = document.getElementById('password-input');
+        const passwordSubmit = document.getElementById('password-submit');
+        const passwordError = document.getElementById('password-error');
+
+        let authToken = null; // To store our session token
+
+        async function handleLogin() {
+            const password = passwordInput.value;
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password })
+                });
+
+                if (!response.ok) { throw new Error('Login failed'); }
+
+                const data = await response.json();
+                authToken = data.token; // Save the token
+                passwordOverlay.style.display = 'none'; // Hide overlay
+                appContainer.style.visibility = 'visible'; // Show chat
+                addMessage("The adventure begins! Your fate is in your hands. What do you wish to do?", "gm");
+                messageInput.focus();
+            } catch (err) {
+                passwordError.style.display = 'block';
+            }
+        }
+
+        passwordSubmit.addEventListener('click', handleLogin);
+        passwordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleLogin();
+        });
 
         async function sendMessage() {
             const message = messageInput.value.trim();
@@ -117,31 +197,37 @@
             try {
                 const response = await fetch('/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}` // Send token with each chat message
+                    },
                     body: JSON.stringify({ message: message })
                 });
 
-                if (!response.ok) {
-                    throw new Error('Network response was not ok.');
+                if (response.status === 401) { // Handle expired/invalid token
+                    addMessage("Session expired. Please refresh and log in again.", "gm");
+                    toggleLoading(false);
+                    return;
                 }
+                if (!response.ok) { throw new Error('Network response was not ok.'); }
 
                 const data = await response.json();
                 addMessage(data.message, 'gm');
 
             } catch (error) {
-                console.error('Error:', error);
                 addMessage('Sorry, an error occurred. The GM might be taking a nap.', 'gm');
             } finally {
                 toggleLoading(false);
-                // --- NEW: Refocus the input field ---
                 messageInput.focus();
             }
         }
 
+        // --- The rest of the script is mostly unchanged ---
+
         function addMessage(text, sender) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${sender === 'user' ? 'user-message' : 'gm-message'}`;
-            messageDiv.innerHTML = text.replace(/\n/g, '<br>'); // Support newlines in AI response
+            messageDiv.innerHTML = text.replace(/\n/g, '<br>');
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
@@ -149,7 +235,6 @@
         function toggleLoading(isLoading) {
             sendButton.disabled = isLoading;
             messageInput.disabled = isLoading;
-
             let loader = document.querySelector('.loader');
             if (isLoading && !loader) {
                 loader = document.createElement('div');
@@ -164,14 +249,12 @@
 
         sendButton.addEventListener('click', sendMessage);
         messageInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !event.shiftKey) { // Allow Shift+Enter for newlines
-                event.preventDefault(); // Prevent default Enter behavior (newline)
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
                 sendMessage();
             }
         });
 
-        addMessage("The adventure begins! Your fate is in your hands. What do you wish to do?", "gm");
-        messageInput.focus(); // Focus on page load
     </script>
 </body>
 

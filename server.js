@@ -1,8 +1,12 @@
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
-import { model } from './config.js'; // Import the model
-import { tools } from './tools.js';   // Import the tools
+import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
+import { model } from './config.js';
+import { tools } from './tools.js';
+
+dotenv.config(); // Load environment variables from .env file
 
 const app = express();
 app.use(bodyParser.json());
@@ -10,15 +14,49 @@ app.use(cors());
 app.use(express.static('public'));
 
 const PORT = process.env.PORT || 10000;
+const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
+const JWT_SECRET = process.env.JWT_SECRET; // A new secret for signing tokens
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error("❌ Missing Supabase environment variables");
     process.exit(1);
 }
+if (!ACCESS_PASSWORD || !JWT_SECRET) {
+    console.error("❌ Missing ACCESS_PASSWORD or JWT_SECRET environment variables");
+    process.exit(1);
+}
+
+// --- NEW: Login Endpoint ---
+app.post("/login", (req, res) => {
+    const { password } = req.body;
+    if (password === ACCESS_PASSWORD) {
+        // Passwords match. Create a token that expires in 8 hours.
+        const token = jwt.sign({ user: 'authed_user' }, JWT_SECRET, { expiresIn: '8h' });
+        res.json({ token });
+    } else {
+        res.status(401).json({ error: 'Incorrect password' });
+    }
+});
+
+// --- NEW: Authentication Middleware ---
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (token == null) return res.sendStatus(401); // No token
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403); // Invalid token
+        req.user = user;
+        next();
+    });
+};
 
 const conversationHistory = [];
 
-app.post("/chat", async (req, res) => {
+// --- PROTECTED Chat Endpoint ---
+app.post("/chat", authenticateToken, async (req, res) => {
+    // The rest of your chat logic is unchanged
     try {
         const { message } = req.body;
         conversationHistory.push({ role: "user", parts: [{ text: message }] });
@@ -30,7 +68,6 @@ app.post("/chat", async (req, res) => {
 
         if (functionCalls && functionCalls.length > 0) {
             const call = functionCalls[0];
-            console.log(`🤖 Request to call tool: ${call.name} with args: ${JSON.stringify(call.args)}`);
             const toolResult = await tools[call.name](call.args);
             const result2 = await chat.sendMessage([{ functionResponse: { name: call.name, response: { content: toolResult } } }]);
             conversationHistory.push(response.candidates[0].content);
