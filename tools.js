@@ -17,24 +17,27 @@ async function runSQL(query) {
 
 // --- Tool Implementations ---
 const tools = {
-    async get_table_data({ table, query }) {
-        let sql = `SELECT * FROM ${table}`;
-        if (query) { sql += ` WHERE ${query}`; }
+    // Get basic data for one or all NPCs
+    async get_npc_data({ npc_name }) {
+        let sql = `SELECT npc_id, name, description, location, disposition, is_hostile FROM npcs`;
+        if (npc_name) {
+            const escape = (val) => `'${val.replace(/'/g, "''")}'`;
+            sql += ` WHERE name = ${escape(npc_name)}`;
+        }
         sql += ';';
         const data = await runSQL(sql);
         return JSON.stringify(data, null, 2);
     },
-    async create_npc({ npc_id, name, description, disposition, location, is_hostile }) {
-        const npcData = {
-            npc_id: npc_id,
-            name: name,
-            description: description,
-            disposition: disposition,
-            location: location,
-            is_hostile: is_hostile,
-            primary_npc: true,
-            status: 'active'
-        };
+    // Get detailed persona for a single primary NPC
+    async get_npc_persona({ npc_id }) {
+        const escape = (val) => `'${val.replace(/'/g, "''")}'`;
+        const sql = `SELECT * FROM npc_personas WHERE npc_id = ${escape(npc_id)};`;
+        const data = await runSQL(sql);
+        return JSON.stringify(data, null, 2);
+    },
+    // Create a new (usually secondary) NPC
+    async create_npc({ npc_id, name, description, location }) {
+        const npcData = { npc_id, name, description, location, primary_npc: false, status: 'active' };
         const resp = await fetch(`${SUPABASE_URL}/rest/v1/npcs`, {
             method: 'POST',
             headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
@@ -42,11 +45,22 @@ const tools = {
         });
         if (!resp.ok) {
             const err = await resp.text();
-            console.error("Supabase API error:", err);
             throw new Error(`Supabase API error: ${resp.status} ${err}`);
         }
         return `Successfully created NPC: ${name}`;
     },
+    // Update basic data for any NPC
+    async update_npc_data({ npc_id, new_location, new_disposition }) {
+        const updates = [];
+        const escape = (val) => (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val);
+        if (new_location) updates.push(`location = ${escape(new_location)}`);
+        if (new_disposition !== undefined) updates.push(`disposition = ${new_disposition}`);
+        if (updates.length === 0) return "No updates provided.";
+
+        const query = `UPDATE npcs SET ${updates.join(', ')} WHERE npc_id = ${escape(npc_id)};`;
+        await runSQL(query);
+        return `NPC ${npc_id}'s data has been successfully updated.`;
+    }
 };
 
 export { tools };
