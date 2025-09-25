@@ -23,8 +23,6 @@ const tools = {
             const sanitizedQuery = query.replace(/;/g, '');
             sql += ` WHERE ${sanitizedQuery}`;
         }
-        // The line below was the bug and has been removed.
-        // sql += ';'; 
         const data = await runSQL(sql);
         return JSON.stringify(data, null, 2);
     },
@@ -57,6 +55,7 @@ const tools = {
         }
         return `Successfully created persona for ${npc_id} and promoted them to a primary NPC.`;
     },
+    // --- THIS IS THE MISSING FUNCTION ---
     async update_npc_data({ npc_id, new_location, new_disposition }) {
         const updates = [];
         const escape = (val) => (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val);
